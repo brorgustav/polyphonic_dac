@@ -7,3 +7,6 @@ Features:
 * Unison mode - for tuning oscillators (sends same pitch on every DAC)
 * Gate mode - sends gate on channel B of MCP4822
 * Normal mode - sends different pitches on every channel and DAC (no gates)
+
+to do:
+lowest note priority / note allocation according to time pressed
