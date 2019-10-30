@@ -51,7 +51,12 @@ unsigned int dacNoteVoltage_max = 4000;
 unsigned int midiNoteRange = 48; //4 volts = 4 octaves in CV (1v/oct) and 4 octaves = 48 midi notes
 unsigned int midiOffset = 36;
 unsigned int polyIndex[num_dac];
-
+//store previous mcp transmit
+byte prevDac_chan = 0;
+byte prevDac_gain = 0;
+byte prevDac_shutdown = 0;
+unsigned int prevDac_dacNote = 0;
+unsigned int prevDac_dacNumber = 0;
 //stored and unused functions
 //byte clock_tick;
 //byte clock_value;
@@ -93,6 +98,7 @@ void loop() {
   //  transmitDac(i);
   // }
   //}
+  digitalWrite(13, HIGH);
   for (int port = 0; port < 10; port++) {
     if (midilist[port]->read()) {
       uint8_t type =       midilist[port]->getType();
@@ -109,21 +115,21 @@ void loop() {
 void midiHandle(uint8_t type, uint8_t data1, uint8_t data2, uint8_t channel)
 {
   midi::MidiType midiType = (midi::MidiType)type;
+       int midiNote = data1 - midiOffset;
+               int midiVelocity = data2;
   switch (midiType)
   {
     case midi::NoteOn:
       {  
         if (unisonMode==false)
         {
-        int midiNote = data1 - midiOffset;
-        int midiVelocity = data2;
         handlePoly(midiNote,  midiVelocity);
         debug.print("["); debug.print(channel); debug.print(" | "); debug.print(type); debug.print(" | "); debug.print(data1); debug.print(" | "); debug.print(data2);     debug.println("]");
         break;
       }
-      else if (unisonMode==true)
+      if (unisonMode==true)
       {
-                int midiNote = data1 - midiOffset;
+
           unisonDac(mcpGain[2], mcpShutdown[1], midiNote);
           break;
       }
@@ -134,7 +140,11 @@ void midiHandle(uint8_t type, uint8_t data1, uint8_t data2, uint8_t channel)
       {
         if (unisonMode==0)
         {
-        int midiNote = data1 - midiOffset;
+        gateOff(midiNote);
+        break;
+        }
+                if (unisonMode==1)
+        {
         gateOff(midiNote);
         break;
         }
@@ -147,29 +157,35 @@ void unisonDac(byte gain, byte shutdown,  int midiNote) //
 {
     unsigned int dacNote = map(midiNote + pitchbend_value, 0, midiNoteRange, dacNoteVoltage_min, dacNoteVoltage_max);
 
- for (int dacSelect = 1; dacSelect <= num_dac; dacSelect++)
+ for (int dacNumber = 1; dacNumber <= num_dac; dacNumber++)
  {
     if (gateMode==true)
  {
-    if (dacSelect % 2)
+  
+    if (dacNumber % 2)
   {
    // debug.println("dacNumber is odd number");
-  transmitDac(mcpGain[2], mcpShutdown[1], dacNote, dacSelect);
+  transmitDac(mcpGain[2], mcpShutdown[1], dacNote, dacNumber);
   }  
 
-  if ( (dacSelect % 2) == 0)
+  if ( (dacNumber % 2) == 0)
   {
-    transmitDac(mcpGain[2], mcpShutdown[1], gateVoltage, dacSelect);
+    transmitDac(mcpGain[2], mcpShutdown[1], gateVoltage, dacNumber);
+    gateIndex[dacNumber] = midiNote;
+    polyIndex[dacNumber] = gateVoltage; //occupy the gate DAC in poly-memory
+    debug.println("Send gate voltage to channel B....");
   }
+ }
+  
+  polyIndex[dacNumber] = dacNote;
   debug.print("debug: cs_pin[");
-  debug.print(cs_pin[dacSelect]);
+  debug.print(cs_pin[dacNumber]);
       debug.print("]");
           debug.print(" - ");
-              debug.print(dacSelect);
+              debug.print(dacNumber);
     debug.print("/");
   debug.println(num_cs);
  }
-}
 }
 
 void gateOff(int midiNote)
@@ -246,6 +262,7 @@ void handlePoly(unsigned int midiNote, unsigned int midiVelocity)
 }
 
 
+
 //void OnPitchChange (byte channel, int pitch_change) {
 //  if (channel < 9) {
 //    pitchbend_value[channel - 1] = map(pitch_change, 0, 16383, pitchbend_value_negative, pitchbend_value_positive);
@@ -262,6 +279,10 @@ void transmitDac(byte gain, byte shutdown,  unsigned int dacNote, int dacNumber)
   {
    // debug.println("dacNumber is odd number");
     mcpChannel = mcpChan[1];
+        debug.println("***********");
+  debug.print("OSCILLATOR #");
+    debug.println(dacNumber/2+1);
+        debug.println("***********");
   }
 
   if ( (dacNumber % 2) == 0)
@@ -279,6 +300,7 @@ void transmitDac(byte gain, byte shutdown,  unsigned int dacNote, int dacNumber)
   digitalWriteFast(cs_pin[chipSelect], HIGH);
 //  if (dacNote < gateVoltage)
 //  {
+    prevDac(gain, shutdown, dacNote, dacNumber);
     debug.print("transmit to DAC #"); debug.print(dacNumber); debug.print(" Channel:"); debug.print(mcpChannel); debug.print(", MCP gain="); debug.print(gain); debug.print(", MCP shutdown=");
     debug.print(shutdown);  debug.print(", Voltage="); debug.print(dacNote); debug.print(", chipselect = cs_pin[");
     debug.print(cs_pin[chipSelect]); debug.println("]");
@@ -287,3 +309,9 @@ void transmitDac(byte gain, byte shutdown,  unsigned int dacNote, int dacNumber)
 
 }
 
+void prevDac(byte gain, byte shutdown,  unsigned int dacNote, int dacNumber) //byte gain, byte shutdown,
+{ 
+  prevDac_gain = gain;
+  prevDac_dacNote = dacNote;
+  prevDac_shutdown = shutdown;
+}
